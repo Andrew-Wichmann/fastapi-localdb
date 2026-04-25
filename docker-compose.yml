@@ -8,6 +8,7 @@ services:
     environment:
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
       DBS_ROOT: /app/dbs
+      REQUEST_LOG_PATH: /app/requests.db
     depends_on:
       otel-collector:
         condition: service_started

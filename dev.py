@@ -6,12 +6,18 @@ Usage:         python dev.py --help
 """
 
 import io
+import json
 import subprocess
+import sys
 import urllib.request
 import zipfile
 from pathlib import Path
 
 import typer
+
+sys.path.insert(0, str(Path(__file__).parent / "src"))
+from models import MarginRequest, MarginResponse  # noqa: E402
+from request_log import RequestLogEntry  # noqa: E402
 
 app = typer.Typer(help="Margin calculator dev tools.", no_args_is_help=True)
 
@@ -116,6 +122,37 @@ def restart(
         else:
             _run("docker", "compose", "down")
         _run("docker", "compose", "up", "-d")
+
+
+@app.command()
+def replay(
+    trace_id: str = typer.Argument(..., help="Trace ID of the request to replay"),
+    source: str = typer.Option(REMOTE_APP_URL, help="Host to fetch the original request from"),
+    target: str = typer.Option(LOCAL_APP_URL, help="Host to replay the request against"),
+):
+    """Fetch a logged request by trace ID and replay it against a target host."""
+    typer.echo(f"==> fetching trace {trace_id} from {source}")
+    with urllib.request.urlopen(f"{source}/debug/request/{trace_id}") as resp:
+        entry = RequestLogEntry.model_validate_json(resp.read())
+
+    margin_request = MarginRequest(cob_date=entry.cob_date, positions=entry.positions)
+    headers = {"Content-Type": "application/json"}
+    for k, v in entry.meta.items():
+        headers[f"X-Meta-{k}"] = v
+
+    typer.echo(f"==> replaying against {target}")
+    req = urllib.request.Request(
+        f"{target}/margin",
+        data=margin_request.model_dump_json().encode(),
+        headers=headers,
+        method="POST",
+    )
+    with urllib.request.urlopen(req) as resp:
+        result = MarginResponse.model_validate_json(resp.read())
+
+    original_json = entry.response.model_dump_json() if entry.response else "null"
+    typer.echo(f"original : {original_json}")
+    typer.echo(f"replayed : {result.model_dump_json()}")
 
 
 @app.command()

@@ -16,50 +16,21 @@ import zipfile
 from concurrent.futures import ProcessPoolExecutor
 from contextlib import asynccontextmanager
 
-from opentelemetry import propagate
+from opentelemetry import propagate, trace as otel_trace
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, field_validator
 
 from database import init_db, partition_path
+from models import MarginRequest, MarginResponse, Position  # noqa: F401 (Position re-exported for FastAPI schema)
+from request_log import RequestLogEntry, drain_loop, get_log_entry, log_request, log_response
 from telemetry import setup_telemetry, setup_worker_telemetry
 from worker import compute_margin
 
 # Must run before app creation so FastAPIInstrumentor sees the real provider
 # and the middleware stack is instrumented before it is frozen.
 setup_telemetry("margin-calculator")
-
-# ---------------------------------------------------------------------------
-# Schemas
-# ---------------------------------------------------------------------------
-
-
-class Position(BaseModel):
-    id: str
-    quantity: float
-
-
-class MarginRequest(BaseModel):
-    cob_date: str
-    positions: list[Position]
-
-    @field_validator("cob_date")
-    @classmethod
-    def validate_date_format(cls, v: str) -> str:
-        from datetime import date
-
-        try:
-            date.fromisoformat(v)
-        except ValueError:
-            raise ValueError("cob_date must be in YYYY-MM-DD format")
-        return v
-
-
-class MarginResponse(BaseModel):
-    total_margin: float
-    cob_date: str
 
 
 # ---------------------------------------------------------------------------
@@ -78,7 +49,9 @@ async def lifespan(app: FastAPI):
         mp_context=multiprocessing.get_context("spawn"),
         initializer=setup_worker_telemetry,
     )
+    drain_task = asyncio.create_task(drain_loop())
     yield
+    drain_task.cancel()
     _executor.shutdown(wait=False)
 
 
@@ -115,19 +88,32 @@ async def download_partition(cob_date: str) -> StreamingResponse:
     )
 
 
+@app.get("/debug/request/{trace_id}", response_model=RequestLogEntry)
+async def get_request(trace_id: str) -> RequestLogEntry:
+    """Return a logged request entry by trace ID."""
+    entry = get_log_entry(trace_id)
+    if entry is None:
+        raise HTTPException(status_code=404, detail=f"No log entry for trace_id={trace_id}")
+    return entry
+
+
 @app.post("/margin", response_model=MarginResponse)
-async def calculate_margin(request: MarginRequest) -> MarginResponse:
+async def calculate_margin(request: MarginRequest, http_request: Request) -> MarginResponse:
     """Compute total margin for all positions using a ProcessPool."""
     if not request.positions:
         return MarginResponse(total_margin=0.0, cob_date=request.cob_date)
 
     loop = asyncio.get_running_loop()
-
-    # Serialize positions to plain dicts — Pydantic models aren't picklable
-    # across process boundaries.
     positions = [pos.model_dump() for pos in request.positions]
 
-    # Inject current trace context so the worker can parent its spans correctly.
+    trace_id = format(otel_trace.get_current_span().get_span_context().trace_id, "032x")
+    meta = {
+        k.lower().removeprefix("x-meta-"): v
+        for k, v in http_request.headers.items()
+        if k.lower().startswith("x-meta-")
+    }
+    log_request(trace_id, request, meta)
+
     carrier: dict = {}
     propagate.inject(carrier)
 
@@ -137,18 +123,20 @@ async def calculate_margin(request: MarginRequest) -> MarginResponse:
             loop.run_in_executor(
                 _executor,
                 compute_margin,
-                request.cob_date,
+                request.cob_date.isoformat(),
                 positions,
                 carrier,
             ),
             timeout=45.0,
         )
     except asyncio.TimeoutError:
-        raise HTTPException(
-            status_code=504,
-            detail="Margin calculation exceeded the 45-second SLA.",
-        )
+        detail = "Margin calculation exceeded the 45-second SLA."
+        log_response(trace_id, 504, {"detail": detail})
+        raise HTTPException(status_code=504, detail=detail)
     except FileNotFoundError as exc:
+        log_response(trace_id, 404, {"detail": str(exc)})
         raise HTTPException(status_code=404, detail=str(exc))
 
-    return MarginResponse(**result)
+    response = MarginResponse(**result)
+    log_response(trace_id, 200, response)
+    return response
