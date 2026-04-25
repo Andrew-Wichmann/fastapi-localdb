@@ -216,3 +216,7 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Generated data — partitioned SQLite DBs and legacy single-file DB
+dbs/
+multipliers.db
