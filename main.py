@@ -107,7 +107,7 @@ async def calculate_margin(request: MarginRequest) -> MarginResponse:
     propagate.inject(carrier)
 
     try:
-        # SLA: 15 seconds total.
+        # SLA: 45 seconds total.
         result: dict = await asyncio.wait_for(
             loop.run_in_executor(
                 _executor,
@@ -116,12 +116,12 @@ async def calculate_margin(request: MarginRequest) -> MarginResponse:
                 positions,
                 carrier,
             ),
-            timeout=15.0,
+            timeout=45.0,
         )
     except asyncio.TimeoutError:
         raise HTTPException(
             status_code=504,
-            detail="Margin calculation exceeded the 15-second SLA.",
+            detail="Margin calculation exceeded the 45-second SLA.",
         )
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc))

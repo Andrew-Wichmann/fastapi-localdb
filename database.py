@@ -33,7 +33,7 @@ def _load_partition(db_path: str) -> sqlite3.Connection:
         return mem
 
 
-@lru_cache(maxsize=5)
+@lru_cache(maxsize=3)
 def _get_connection(db_path: str) -> sqlite3.Connection:
     return _load_partition(db_path)
 
@@ -42,11 +42,11 @@ def init_db() -> None:
     """No-op — partitions are pre-created by create_partitions.py."""
 
 
-def get_multipliers(cob_date: str, position_ids: list[str]) -> dict[str, float]:
-    """Fetch multipliers for all requested ids from the cob_date partition.
+def get_pnl(cob_date: str, position_ids: list[str]) -> dict[str, float]:
+    """Fetch total PnL (summed across all scenarios) for the requested positions.
 
-    Intended to be called inside a worker process.  Returns only the ids that
-    exist in the database; missing ids are omitted from the result.
+    Returns only the position_ids that exist in the database; missing ids are
+    omitted from the result.
     """
     if not position_ids:
         return {}
@@ -65,7 +65,12 @@ def get_multipliers(cob_date: str, position_ids: list[str]) -> dict[str, float]:
         span.set_attribute("db.num_ids", len(position_ids))
         placeholders = ",".join("?" * len(position_ids))
         rows = conn.execute(
-            f"SELECT id, multiplier FROM multipliers WHERE id IN ({placeholders})",
+            f"""
+            SELECT position_id, SUM(pnl)
+            FROM pnl
+            WHERE position_id IN ({placeholders})
+            GROUP BY position_id
+            """,
             position_ids,
         ).fetchall()
         span.set_attribute("db.rows_returned", len(rows))
