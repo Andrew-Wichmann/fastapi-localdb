@@ -10,7 +10,9 @@ SLA target: respond in ≤ 15 seconds.
 """
 
 import asyncio
+import io
 import multiprocessing
+import zipfile
 from concurrent.futures import ProcessPoolExecutor
 from contextlib import asynccontextmanager
 
@@ -18,9 +20,10 @@ from opentelemetry import propagate
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, field_validator
 
-from database import init_db
+from database import init_db, partition_path
 from telemetry import setup_telemetry, setup_worker_telemetry
 from worker import compute_margin
 
@@ -88,6 +91,28 @@ FastAPIInstrumentor.instrument_app(app)
 # ---------------------------------------------------------------------------
 # Endpoint
 # ---------------------------------------------------------------------------
+
+
+@app.get("/debug/partition/{cob_date}")
+async def download_partition(cob_date: str) -> StreamingResponse:
+    """Zip and stream a raw SQLite partition for local debugging."""
+    db = partition_path(cob_date)
+    if not db.exists():
+        raise HTTPException(status_code=404, detail=f"No partition for cob_date={cob_date}")
+
+    def zip_stream():
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
+            zf.write(db, arcname=f"dbs/cob_date={cob_date}/sqlite.db")
+        buf.seek(0)
+        yield from buf
+
+    filename = f"partition_{cob_date}.zip"
+    return StreamingResponse(
+        zip_stream(),
+        media_type="application/zip",
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )
 
 
 @app.post("/margin", response_model=MarginResponse)

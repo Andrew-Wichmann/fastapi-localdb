@@ -24,7 +24,7 @@ POSITIONS: list[tuple[str, float]] = [
     ("BRK",    30.0),
 ]
 
-DBS_ROOT = Path(__file__).parent / "dbs"
+DBS_ROOT = Path(__file__).parent.parent / "dbs"
 NUM_PARTITIONS = 15
 NOISE = 0.05  # ±5% per-day drift on top of scenario factor
 

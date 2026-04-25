@@ -4,18 +4,21 @@ Each worker process must open its own connection — SQLite connections are not
 fork-safe to share across processes.
 """
 
+import os
 import sqlite3
 from functools import lru_cache
 from pathlib import Path
 
 from opentelemetry import trace
 
-_ROOT = Path(__file__).parent
+# In Docker, DBS_ROOT=/app/dbs is set via docker-compose.
+# Locally (src/ layout), default walks up from src/ to project root.
+_DBS_ROOT = Path(os.environ["DBS_ROOT"]) if "DBS_ROOT" in os.environ else Path(__file__).parent.parent / "dbs"
 _tracer = trace.get_tracer(__name__)
 
 
 def partition_path(cob_date: str) -> Path:
-    return _ROOT / "dbs" / f"cob_date={cob_date}" / "sqlite.db"
+    return _DBS_ROOT / f"cob_date={cob_date}" / "sqlite.db"
 
 
 def _load_partition(db_path: str) -> sqlite3.Connection:
