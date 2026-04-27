@@ -48,8 +48,14 @@ def _ssh(cmd: str) -> None:
     )
 
 
+def _venv_bin(name: str) -> str:
+    candidate = PROJECT_ROOT / ".venv" / "bin" / name
+    return str(candidate) if candidate.exists() else name
+
+
 def _run(*cmd: str) -> None:
-    subprocess.run(list(cmd), check=True)
+    resolved = [_venv_bin(cmd[0]), *cmd[1:]]
+    subprocess.run(resolved, check=True)
 
 
 @app.command()

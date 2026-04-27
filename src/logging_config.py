@@ -48,6 +48,18 @@ _shared_processors: list = [
 ]
 
 
+class _BackWritingProcessorFormatter(structlog.stdlib.ProcessorFormatter):
+    """Write the rendered JSON back onto record.msg so handlers that run after
+    the StreamHandler (e.g. LoggingInstrumentor's OTel handler) see structured
+    output rather than the original raw log string."""
+
+    def format(self, record: logging.LogRecord) -> str:
+        rendered = super().format(record)
+        record.msg = rendered
+        record.args = ()
+        return rendered
+
+
 def setup_logging() -> None:
     structlog.configure(
         processors=_shared_processors + [
@@ -57,7 +69,7 @@ def setup_logging() -> None:
         wrapper_class=structlog.stdlib.BoundLogger,
         cache_logger_on_first_use=True,
     )
-    formatter = structlog.stdlib.ProcessorFormatter(
+    formatter = _BackWritingProcessorFormatter(
         foreign_pre_chain=[_parse_uvicorn_access] + _shared_processors,
         processors=[
             structlog.stdlib.ProcessorFormatter.remove_processors_meta,
