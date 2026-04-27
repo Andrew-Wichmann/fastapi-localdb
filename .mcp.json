@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "margin-calculator": {
+      "command": "/home/twisted/Code/fastapi-localdb/.venv/bin/python",
+      "args": ["/home/twisted/Code/fastapi-localdb/mcp_server.py"]
+    }
+  }
+}

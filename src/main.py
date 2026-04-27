@@ -22,7 +22,10 @@ from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import StreamingResponse
 
+import structlog
+
 from database import init_db, partition_path
+from logging_config import TraceContextMiddleware, setup_logging
 from models import MarginRequest, MarginResponse, Position  # noqa: F401 (Position re-exported for FastAPI schema)
 from request_log import RequestLogEntry, drain_loop, get_log_entry, log_request, log_response
 from telemetry import setup_telemetry, setup_worker_telemetry
@@ -30,7 +33,10 @@ from worker import compute_margin
 
 # Must run before app creation so FastAPIInstrumentor sees the real provider
 # and the middleware stack is instrumented before it is frozen.
+setup_logging()
 setup_telemetry("margin-calculator")
+
+_log = structlog.get_logger()
 
 
 # ---------------------------------------------------------------------------
@@ -59,6 +65,9 @@ app = FastAPI(title="Margin Calculator", lifespan=lifespan)
 # Instrument after app creation but before any request — middleware stack is
 # built lazily on first request, so this registration is still in time.
 FastAPIInstrumentor.instrument_app(app)
+# TraceContextMiddleware must come after instrument_app so OTel's middleware
+# is outermost: OTel starts the span, then TraceContext reads it.
+app.add_middleware(TraceContextMiddleware)
 
 
 # ---------------------------------------------------------------------------
@@ -100,9 +109,10 @@ async def get_request(trace_id: str) -> RequestLogEntry:
 @app.post("/margin", response_model=MarginResponse)
 async def calculate_margin(request: MarginRequest, http_request: Request) -> MarginResponse:
     """Compute total margin for all positions using a ProcessPool."""
+    _log.info("margin.request", cob_date=request.cob_date.isoformat(), num_positions=len(request.positions))
+
     if not request.positions:
         return MarginResponse(total_margin=0.0, cob_date=request.cob_date)
-
     loop = asyncio.get_running_loop()
     positions = [pos.model_dump() for pos in request.positions]
 
@@ -139,4 +149,5 @@ async def calculate_margin(request: MarginRequest, http_request: Request) -> Mar
 
     response = MarginResponse(**result)
     log_response(trace_id, 200, response)
+    _log.info("margin.response", total_margin=response.total_margin)
     return response
