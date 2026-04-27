@@ -20,7 +20,7 @@ connectors:
       - status.code
 
 exporters:
-  otlp:
+  otlp_grpc/jaeger:
     endpoint: jaeger:4317
     tls:
       insecure: true
@@ -28,6 +28,10 @@ exporters:
     endpoint: 0.0.0.0:8889
     resource_to_telemetry_conversion:
       enabled: true
+  otlp_http/loki:
+    endpoint: http://loki:3100/otlp
+    tls:
+      insecure: true
   debug:
     verbosity: basic
 
@@ -36,7 +40,10 @@ service:
   pipelines:
     traces:
       receivers: [otlp]
-      exporters: [otlp, spanmetrics, debug]
+      exporters: [otlp_grpc/jaeger, spanmetrics, debug]
     metrics:
       receivers: [spanmetrics, otlp]
       exporters: [prometheus]
+    logs:
+      receivers: [otlp]
+      exporters: [otlp_http/loki]

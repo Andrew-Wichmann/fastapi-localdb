@@ -7,10 +7,14 @@ fork+thread issue where BatchSpanProcessor threads don't survive fork.
 
 import os
 
-from opentelemetry import metrics, trace
+from opentelemetry import _logs as otel_logs, metrics, trace
+from opentelemetry.exporter.otlp.proto.grpc._log_exporter import OTLPLogExporter
 from opentelemetry.exporter.otlp.proto.grpc.metric_exporter import OTLPMetricExporter
 from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
+from opentelemetry.instrumentation.logging import LoggingInstrumentor
 from opentelemetry.instrumentation.system_metrics import SystemMetricsInstrumentor
+from opentelemetry.sdk._logs import LoggerProvider
+from opentelemetry.sdk._logs.export import BatchLogRecordProcessor
 from opentelemetry.sdk.metrics import MeterProvider
 from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
 from opentelemetry.sdk.resources import Resource
@@ -38,6 +42,13 @@ def setup_telemetry(service_name: str, batch: bool = True, extra_resource: dict 
         ],
     )
     metrics.set_meter_provider(meter_provider)
+
+    logger_provider = LoggerProvider(resource=resource)
+    logger_provider.add_log_record_processor(
+        BatchLogRecordProcessor(OTLPLogExporter(endpoint=endpoint, insecure=True))
+    )
+    otel_logs.set_logger_provider(logger_provider)
+    LoggingInstrumentor().instrument(set_logging_format=False)
 
     SystemMetricsInstrumentor().instrument()
 
