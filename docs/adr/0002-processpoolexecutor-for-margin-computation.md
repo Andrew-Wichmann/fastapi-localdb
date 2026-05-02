@@ -10,7 +10,7 @@
 ## Context
 
 > [!NOTE]
-> Margin calculation is CPU-bound: each request fans out across a list of positions, hits a SQLite partition for P&L data, and multiplies quantities. Python's GIL means threads do not provide true parallelism for CPU-bound work. At the same time, the service is a local development tool — not a production system managing a fleet of machines — so the solution should be simple to operate and easy to observe.
+> Margin calculation is CPU-bound: each request fans out across a list of positions, hits a SQLite partition for P&L data, and multiplies quantities. Python's GIL means threads do not provide true parallelism for CPU-bound work. The solution should be simple to operate, easy to observe, and viable in production without requiring a distributed compute layer unless scaling demands it.
 
 ## Decision
 
@@ -24,7 +24,7 @@ Workers are initialised with `multiprocessing.get_context("spawn")` to avoid inh
 > - **True CPU parallelism** — each worker process bypasses the GIL, running DB lookups and arithmetic on a separate core.
 > - **Full distributed trace** — the carrier propagation pattern (`propagate.inject` in the main process, `propagate.extract` in the worker) means every worker span is linked to its parent request span in Tempo. No trace context is lost at the process boundary.
 > - **Per-worker telemetry** — each worker exports spans and metrics independently via OTLP, tagged with `process.pid`, so you can distinguish work done by different workers in Grafana without any additional instrumentation.
-> - **Simplicity ceiling** — the executor is sized to local hardware. Scaling beyond one machine means replacing this with a task queue (Celery, Ray, etc.), but that complexity is not justified for a local dev tool with a 45-second SLA.
+> - **Single-machine scaling** — the executor is sized to the cores available on one host. This is a valid production deployment topology; horizontal scaling (multi-host task queues) is only warranted if profiling shows this ceiling is actually hit.
 > - **`spawn` is required** — `fork` would copy the parent's `BatchSpanProcessor` into each worker, causing duplicate span exports and potential deadlocks on the gRPC channel. The `spawn` context adds ~200ms of worker startup time per cold start.
 
 ## Alternatives Considered
@@ -33,5 +33,5 @@ Workers are initialised with `multiprocessing.get_context("spawn")` to avoid inh
 |--------|-------------|
 | **ThreadPoolExecutor** | Threads share the GIL; CPU-bound work does not parallelise. Would not improve throughput over a single-threaded approach. |
 | **asyncio tasks** | Same GIL constraint — async concurrency is I/O concurrency, not CPU concurrency. |
-| **Celery / task queue** | Introduces a broker (Redis/RabbitMQ), worker daemons, and deployment config that is disproportionate for a local tool. Observability would also require separate broker instrumentation. |
-| **Ray** | Powerful but heavyweight; designed for distributed compute clusters, not a single-machine dev service. |
+| **Celery / task queue** | Introduces a broker (Redis/RabbitMQ), worker daemons, and deployment config that adds operational complexity without throughput benefit until the single-machine ceiling is actually reached. Observability would also require separate broker instrumentation. |
+| **Ray** | Powerful but heavyweight; designed for distributed compute clusters. Adds significant operational surface area that is only justified at scales beyond what a single host can handle. |
