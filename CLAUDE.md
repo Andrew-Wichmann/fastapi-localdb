@@ -23,6 +23,8 @@ A personal, self-hosted voice assistant modeled after Claude's conversational in
 
 ## Key Decisions Log
 
+> **Instruction for AI assistants**: Whenever a design or architecture decision is made, changed, or reversed during any session, record it here immediately. Include what was decided, what was rejected, and why. This log is the authoritative record of intent — keep it current.
+
 **TTS mode: batch, not streaming**
 Batch TTS (generate full audio, then play) chosen over streaming. Streaming requires chunking, buffer management, and partial-sentence handling — significant complexity for marginal latency gain. Piper is fast enough that batch latency is acceptable.
 
