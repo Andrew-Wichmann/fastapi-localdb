@@ -31,8 +31,8 @@ Batch TTS (generate full audio, then play) chosen over streaming. Streaming requ
 **Voice session framing: wake word + end word**
 Sessions are bounded by a wake word (start listening) and an end word (stop listening). This is deterministic and fully hands-free. VAD (Voice Activity Detection) was considered but rejected as the primary cutoff — it is unreliable across environments and mic setups. VAD may still be used as a fallback timeout (e.g. auto-cancel if silence exceeds 10s after wake word) but never as the primary session boundary.
 
-**Server architecture: hub-and-spoke**
-A local Python server owns the full pipeline. Clients (browser, mobile PWA) connect via WebSocket and stream audio. The server handles STT → LLM → TTS and returns audio. Clients are thin.
+**Server architecture: client-server**
+A local Python server owns the full pipeline. Clients (browser, mobile PWA) connect via WebSocket and stream audio. The server handles STT → LLM → TTS and returns audio. Clients are thin and hold no model or tool logic.
 
 ## Stack (TBD)
 
