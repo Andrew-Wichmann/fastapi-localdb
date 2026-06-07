@@ -1,0 +1,6 @@
+{
+  "projectContext": {
+    "name": "voice-assistant",
+    "description": "Self-hosted, local-first voice assistant with extensible tool system"
+  }
+}
