@@ -19,6 +19,7 @@ A personal, self-hosted voice assistant modeled after Claude's conversational in
 - **Tool interface**: Tools expose a standard interface (name, description, schema, handler) so the assistant can discover and invoke them uniformly
 - **Stateless core, stateful tools**: The assistant pipeline is stateless; tools own their state
 - **Progressive enhancement**: Core voice loop works standalone; tools layer on top
+- **Swappable backends**: STT, TTS, and LLM are each abstracted behind a stable adapter interface. The active implementation is selected by config — no code changes to switch models. All three are independently swappable.
 
 ## Key Decisions Log
 
