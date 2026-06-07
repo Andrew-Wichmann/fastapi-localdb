@@ -23,16 +23,25 @@ A personal, self-hosted voice assistant modeled after Claude's conversational in
 
 ## Key Decisions Log
 
-_Record non-obvious technical decisions here as the project evolves._
+**TTS mode: batch, not streaming**
+Batch TTS (generate full audio, then play) chosen over streaming. Streaming requires chunking, buffer management, and partial-sentence handling — significant complexity for marginal latency gain. Piper is fast enough that batch latency is acceptable.
+
+**Voice session framing: wake word + end word**
+Sessions are bounded by a wake word (start listening) and an end word (stop listening). This is deterministic and fully hands-free. VAD (Voice Activity Detection) was considered but rejected as the primary cutoff — it is unreliable across environments and mic setups. VAD may still be used as a fallback timeout (e.g. auto-cancel if silence exceeds 10s after wake word) but never as the primary session boundary.
+
+**Server architecture: hub-and-spoke**
+A local Python server owns the full pipeline. Clients (browser, mobile PWA) connect via WebSocket and stream audio. The server handles STT → LLM → TTS and returns audio. Clients are thin.
 
 ## Stack (TBD)
 
 To be decided as implementation begins. Candidates:
-- STT: Whisper (faster-whisper / whisper.cpp)
-- TTS: Kokoro, Piper, or Coqui
+- STT: faster-whisper
+- TTS: Piper (fast, good quality, batch-friendly)
+- Wake word: openWakeWord (ONNX, open source)
 - LLM backend: Ollama (local) with Claude API as optional fallback
+- Server: Python + FastAPI + WebSockets
+- Client: Progressive Web App (PWA)
 - Tool runtime: Python with a simple plugin loader
-- Mobile: Progressive Web App (PWA) or native with a local server
 
 ## Out of Scope
 
